@@ -3,7 +3,7 @@
   "description": "Simply run multiple shell commands in parallel.",
   "author": "Chris Ackerman <chris@topher.land>",
   "license": "ISC",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "files": [
     "lib/**"
   ],
@@ -29,8 +29,6 @@
     "modernize": "npm-check-updates -u"
   },
   "devDependencies": {
-    "@babel/core": "^7.18.10",
-    "@babel/preset-env": "^7.18.10",
     "@types/cross-spawn": "^6.0.2",
     "@types/jest": "^28.1.6",
     "@types/node": "^18.6.3",
