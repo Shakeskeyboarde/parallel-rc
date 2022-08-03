@@ -27,10 +27,21 @@ rc build
 
 You can also use the longer `parallel-rc` command, which is an alias for `rc`.
 
+## Options
+
+- `-c, --concurrency <num>`
+  - Override the number commands that are run in parallel.
+- `-a, --all`
+  - Continue running new commands even if a commands fails.
+- `--color, --no-color`
+  - Explicitly enable or disable color output.
+
+Without an explicit color option, colors are enabled automatically if support is detected (See [supports-colors](https://www.npmjs.com/package/supports-color)).
+
 ## Command file format
 
-- Blank lines are ignored
-- Lines that start with `#` are comments, which are ignored.
+- Blank lines are ignored.
+- Lines that start with `#` are comments (which are ignored).
 - All other lines will be executed as shell commands.
 
 ## Command running
@@ -39,14 +50,3 @@ You can also use the longer `parallel-rc` command, which is an alias for `rc`.
 - Each command is run in parallel, limited to the number of CPU cores + 1 (See the `--concurrency` option).
 - Each command's output is prefixed with the command index from the command file (eg. `"0: output line"`).
 - If a command fails, the `parallel-rc` exit code will be non-zero, and no new commands will be started (See the `--all` option).
-
-## Options
-
-- `-c, --concurrency <num>`
-  - Override the number of parallel commands.
-- `-a, --all`
-  - Continue running new commands if a commands fails.
-- `--color, --no-color`
-  - Explicitly enable or disable color output.
-
-If not color command line options are set, then color support is detected automatically using the [supports-colors](https://www.npmjs.com/package/supports-color) package.

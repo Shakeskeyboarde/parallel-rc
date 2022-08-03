@@ -1,6 +1,7 @@
 import { create as createColors } from 'ansi-colors';
 import spawn from 'cross-spawn';
 import assert from 'node:assert';
+import { type ChildProcess } from 'node:child_process';
 import nodeFs from 'node:fs';
 import module from 'node:module';
 import os from 'node:os';
@@ -12,6 +13,18 @@ import { createLogger } from './logger.js';
 import { usage } from './usage.js';
 
 const main = async (argv = process.argv.slice(2)): Promise<void> => {
+  const interrupted = { value: false };
+  const childProcesses = new Set<ChildProcess>();
+  const interrupt = () => {
+    process.stderr.clearLine(0);
+    process.stderr.cursorTo(0);
+    interrupted.value = true;
+    childProcesses.forEach((childProcess) => childProcess.kill('SIGINT'));
+  };
+
+  process.on('SIGINT', interrupt);
+  process.on('SIGTERM', interrupt);
+
   const colors = createColors();
   const args = parseArgs(
     argv,
@@ -49,80 +62,91 @@ const main = async (argv = process.argv.slice(2)): Promise<void> => {
 
   const all = args.has('all');
   const concurrency = args.get('concurrency') ?? os.cpus().length + 1;
-  const filenames = args.other;
+  const filenames = args.positional;
 
   assert(concurrency > 0, 'Concurrency must be greater than zero');
   assert(filenames.length, 'One command filename is required');
 
   const limiter = limit(concurrency);
-
   const config = await Promise.all(
     filenames.map((filename) =>
-      limiter.run(() =>
-        nodeFs.promises
-          .readFile(filename + '.rc', 'utf8')
-          .catch(() => nodeFs.promises.readFile(filename, 'utf8'))
-          .catch(() => {
-            throw new Error(`File not found (${JSON.stringify(filename + '.rc')}, ${JSON.stringify(filename)})`);
-          }),
+      limiter.run(async () =>
+        interrupted.value
+          ? ''
+          : nodeFs.promises
+              .readFile(filename + '.rc', 'utf8')
+              .catch(() => nodeFs.promises.readFile(filename, 'utf8'))
+              .catch(() => {
+                throw new Error(`File not found (${JSON.stringify(filename + '.rc')}, ${JSON.stringify(filename)})`);
+              }),
       ),
     ),
   ).then((values) => values.join('\n'));
 
+  if (interrupted.value) {
+    return;
+  }
+
+  const errors: [index: number, reason: string][] = [];
   const commands = config
     .split(/\r?\n/)
     .map((line) => line.trim())
     .filter((line) => line && !line.startsWith('#'));
-
-  const errors: [index: number, code: number | string | null][] = [];
-
   const promises = commands
     .map((command, i) => () => {
       return new Promise<void>((resolve) => {
-        const prefix = colors.dim(i + ': ');
-        const info = createLogger({ onWrite: (text) => process.stdout.write(text), prefix });
-        const notice = createLogger({ decorate: colors.bold, onWrite: (text) => process.stdout.write(text), prefix });
-        const warn = createLogger({ decorate: colors.yellow, onWrite: (text) => process.stderr.write(text), prefix });
-        const error = createLogger({ decorate: colors.red, onWrite: (text) => process.stderr.write(text), prefix });
-
-        if (errors.length && !all) {
+        if (interrupted.value || (errors.length && !all)) {
           resolve();
           return;
         }
 
-        notice.log(`$ ${command}`);
+        const intro = createLogger({ prefix: colors.dim(`${i}> `), wrap: colors.bold, write: process.stderr });
+        const output = createLogger({ prefix: colors.dim(`${i}: `), write: process.stdout });
+        const error = createLogger({ prefix: colors.dim(`${i}! `), wrap: colors.red, write: process.stderr });
+        const finish = () => {
+          intro.flush();
+          output.flush();
+          error.flush();
+          resolve();
+        };
 
-        const childProcess = spawn(command, {
-          shell: true,
-          stdio: 'pipe',
-        });
+        intro.log(command);
 
+        const childProcess = spawn(command, { env: { ...process.env, TERM: 'dumb' }, shell: true, stdio: 'pipe' });
+
+        childProcesses.add(childProcess);
         childProcess.stdin?.end();
-        childProcess.stdout?.setEncoding('utf8').on('data', info.write);
-        childProcess.stderr?.setEncoding('utf8').on('data', warn.write);
+        childProcess.stdout?.setEncoding('utf8').on('data', output.write);
+        childProcess.stderr?.setEncoding('utf8').on('data', output.write);
         childProcess.on('error', (err) => {
+          childProcesses.delete(childProcess);
+
           if (process.exitCode == null) {
             process.exitCode = 1;
           }
 
-          errors.push([i, 'error']);
           error.log(`${err}`);
-          resolve();
+          errors.push([i, err.name]);
+          finish();
         });
-        childProcess.on('close', (code) => {
-          if (code == null || code !== 0) {
-            if (process.exitCode == null) {
-              process.exitCode = 1;
-            }
+        childProcess.on('exit', (code, signal) => {
+          childProcesses.delete(childProcess);
 
-            errors.push([i, code]);
+          if (code !== 0 && process.exitCode == null) {
+            process.exitCode = 1;
           }
 
-          info.flush();
-          notice.flush();
-          warn.flush();
-          error.flush();
-          resolve();
+          if (code != null) {
+            if (code !== 0) {
+              errors.push([i, `Code: ${code}`]);
+            }
+          } else if (signal != null) {
+            errors.push([i, signal]);
+          } else {
+            errors.push([i, '']);
+          }
+
+          finish();
         });
       });
     })
@@ -132,8 +156,8 @@ const main = async (argv = process.argv.slice(2)): Promise<void> => {
 
   errors
     .sort(([a], [b]) => a - b)
-    .forEach(([index, code]) => {
-      console.log(colors.red(`Command #${index} failed (${code})`));
+    .forEach(([index, reason]) => {
+      console.error(colors.red(`Failed command ${index}${reason ? ` (${reason})` : ''}`));
     });
 };
 

@@ -20,7 +20,7 @@ type Args<TOptions extends ArgsOptions<any>> = Simplify<
           }
         : never;
     }[keyof TOptions]
-  > & { readonly other: readonly string[] }
+  > & { readonly positional: readonly string[] }
 >;
 
 const parseArgs = <
@@ -32,7 +32,7 @@ const parseArgs = <
   aliases: ArgsAliases<keyof TOptions, TAliases> = {} as ArgsAliases<keyof TOptions, TAliases>,
 ): Args<ArgsOptions<TOptions>> => {
   const argvCopy = [...argv];
-  const other: string[] = [];
+  const positional: string[] = [];
   const args: Record<string, any[]> = {};
 
   for (const [key] of Object.entries(options) as [string, ArgsType][]) {
@@ -43,12 +43,12 @@ const parseArgs = <
 
   while ((arg = argvCopy.shift()) != null) {
     if (arg === '--') {
-      other.push(...argvCopy);
+      positional.push(...argvCopy);
       break;
     }
 
-    if (!arg.startsWith('-')) {
-      other.push(arg);
+    if (!/^(?:-.|--.{2,})$/.test(arg)) {
+      positional.push(arg);
       continue;
     }
 
@@ -56,16 +56,16 @@ const parseArgs = <
     // eslint-disable-next-line unicorn/no-unsafe-regex
     [, name, value] = arg.match(/^-*([^=]*)(?:=(.*))?$/su) as [string, string, string | undefined];
 
-    if (name in aliases) {
+    if (!(name in options)) {
+      if (!(name in aliases)) {
+        throw new Error(`Option ${JSON.stringify(arg)} is unknown`);
+      }
+
       name = (aliases as Record<string, string>)[name];
     }
 
     if (name in options) {
       const parse = (options as Record<string, ArgsType>)[name];
-
-      if (!parse) {
-        throw new Error(`Option ${JSON.stringify(arg)} is unknown`);
-      }
 
       if (parse === Boolean) {
         if (value != null) {
@@ -106,7 +106,7 @@ const parseArgs = <
     has: (key: string) => {
       return args[key]?.length > 0;
     },
-    other,
+    positional,
   } as unknown as Args<ArgsOptions<TOptions>>;
 };
 
