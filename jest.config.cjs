@@ -13,8 +13,11 @@ module.exports = {
   coverageProvider: 'v8',
   coverageReporters: ['text-summary', 'html-spa', 'lcov'],
   coverageThreshold: { global: { branches: 50, functions: 50, lines: 50, statements: 50 } },
-  moduleNameMapper: {},
-  preset: 'ts-jest/presets/js-with-babel',
+  moduleNameMapper: {
+    // Remove the .js extension (required for ES Module support) from TS file imports.
+    '(.*)\\.js$': '$1',
+  },
+  preset: 'ts-jest',
   restoreMocks: true,
   roots: ['src'],
   setupFilesAfterEnv: [],

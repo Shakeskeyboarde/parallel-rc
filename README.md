@@ -2,6 +2,12 @@
 
 Simply run multiple shell commands in parallel.
 
+## Installation
+
+```sh
+npm install --global parallel-rc
+```
+
 ## Usage
 
 Create a command file which contains one shell command per line.
@@ -13,11 +19,13 @@ tsc --project tsconfig.build.json
 tsc --project tsconfig.types.json
 ```
 
-Pass the filename to the `parallel-rc` command. The `.rc` extension can be omitted.
+Run the command file. The `.rc` file extension can optionally be omitted.
 
 ```sh
-npx parallel-rc build
+rc build
 ```
+
+You can also use the longer `parallel-rc` command, which is an alias for `rc`.
 
 ## Command file format
 
@@ -38,4 +46,7 @@ npx parallel-rc build
   - Override the number of parallel commands.
 - `-a, --all`
   - Continue running new commands if a commands fails.
+- `--color, --no-color`
+  - Explicitly enable or disable color output.
 
+If not color command line options are set, then color support is detected automatically using the [supports-colors](https://www.npmjs.com/package/supports-color) package.

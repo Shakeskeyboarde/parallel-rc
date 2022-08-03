@@ -19,4 +19,8 @@ module.exports = {
     },
   ],
   root: true,
+  rules: {
+    'import/extensions': ['warn', 'ignorePackages'],
+    'import/no-unresolved': 'off',
+  },
 };

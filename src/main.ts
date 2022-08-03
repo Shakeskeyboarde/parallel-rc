@@ -1,21 +1,26 @@
-import { bold, dim, red, yellow } from 'ansi-colors';
+import { create as createColors } from 'ansi-colors';
 import spawn from 'cross-spawn';
 import assert from 'node:assert';
 import nodeFs from 'node:fs';
+import module from 'node:module';
 import os from 'node:os';
+import { createSupportsColor } from 'supports-color';
 
-import { parseArgs } from './args';
-import { limit } from './limit';
-import { createLogger } from './logger';
-import { usage } from './usage';
+import { parseArgs } from './args.js';
+import { limit } from './limit.js';
+import { createLogger } from './logger.js';
+import { usage } from './usage.js';
 
 const main = async (argv = process.argv.slice(2)): Promise<void> => {
+  const colors = createColors();
   const args = parseArgs(
     argv,
     {
       all: Boolean,
+      color: Boolean,
       concurrency: Number,
       help: Boolean,
+      'no-color': Boolean,
       version: Boolean,
     },
     {
@@ -26,14 +31,19 @@ const main = async (argv = process.argv.slice(2)): Promise<void> => {
     },
   );
 
+  colors.enabled =
+    !args.has('no-color') &&
+    (args.has('color') ||
+      (Boolean(createSupportsColor(process.stdout, { sniffFlags: false })) &&
+        Boolean(createSupportsColor(process.stderr, { sniffFlags: false }))));
+
   if (args.has('help')) {
     usage();
     return;
   }
 
   if (args.has('version')) {
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
-    console.log(require('../package.json').version);
+    console.log(module.createRequire(import.meta.url)('../package.json').version);
     return;
   }
 
@@ -69,11 +79,11 @@ const main = async (argv = process.argv.slice(2)): Promise<void> => {
   const promises = commands
     .map((command, i) => () => {
       return new Promise<void>((resolve) => {
-        const prefix = dim(i + ': ');
+        const prefix = colors.dim(i + ': ');
         const info = createLogger({ onWrite: (text) => process.stdout.write(text), prefix });
-        const notice = createLogger({ decorate: bold, onWrite: (text) => process.stdout.write(text), prefix });
-        const warn = createLogger({ decorate: yellow, onWrite: (text) => process.stderr.write(text), prefix });
-        const error = createLogger({ decorate: red, onWrite: (text) => process.stderr.write(text), prefix });
+        const notice = createLogger({ decorate: colors.bold, onWrite: (text) => process.stdout.write(text), prefix });
+        const warn = createLogger({ decorate: colors.yellow, onWrite: (text) => process.stderr.write(text), prefix });
+        const error = createLogger({ decorate: colors.red, onWrite: (text) => process.stderr.write(text), prefix });
 
         if (errors.length && !all) {
           resolve();
@@ -123,7 +133,7 @@ const main = async (argv = process.argv.slice(2)): Promise<void> => {
   errors
     .sort(([a], [b]) => a - b)
     .forEach(([index, code]) => {
-      console.log(red(`Command #${index} failed (${code})`));
+      console.log(colors.red(`Command #${index} failed (${code})`));
     });
 };
 

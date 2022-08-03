@@ -16,10 +16,11 @@ exit code will be non-zero.
 NOTE: The '.rc' extension can be omitted from the filename.
 
 Options:
+  -h, --help               Display this help text
+  -v, --version            Display the current version
   -c, --concurrency <num>  Maximum number of parallel processes
   -a, --all                Run all commands even if one fails
-  -v, --version            Display the current version
-  -h, --help               Display this help text
+  --color, --no-color      Explicitly enable or disable color output
     `.trim() + '\n',
   );
 };

@@ -6,7 +6,7 @@ import('source-map-support/register')
   // Ignoring a possible import error. The source-map-support dependency is
   // optional, and only installed in development.
   .catch(() => undefined)
-  .then(async () => import('./main'))
+  .then(async () => import('./main.js'))
   .then(async ({ main }) => main())
   .catch((error) => {
     console.error(isDevelopment ? error : `${error}`);
