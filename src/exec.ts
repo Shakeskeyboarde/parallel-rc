@@ -8,6 +8,7 @@ import { limit } from './util/limit.js';
 import { LineStream } from './util/line-stream.js';
 
 type ExecCommand = {
+  readonly cwd?: string;
   readonly script: string;
   readonly shell?: string;
 };
@@ -37,6 +38,7 @@ const exec = async (command: Command, options: ExecOptions = {}): Promise<void> 
 
   await new Promise<void>((resolve) => {
     const proc = spawn(command.script, {
+      cwd: command.cwd,
       env: { ...process.env, TERM: 'dumb' },
       shell: shell ?? command.shell ?? true,
       stdio: ['ignore', 'pipe', 'pipe'],

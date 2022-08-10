@@ -12,14 +12,14 @@ npm install --global parallel-rc
 
 Create a command file which contains one shell command per line.
 
-Filename: `build.rc`
+Filename: `rc-build`
 
 ```
 tsc --project tsconfig.build.json
 tsc --project tsconfig.types.json
 ```
 
-Run the command file. The `.rc` file extension can optionally be omitted.
+Run the command file. Optionally, the `rc-` prefix can be omitted, and the `.rc`, `.sh`, `.ps1`, `.cmd`, or `.txt` file extensions can also be omitted.
 
 ```sh
 rc build
@@ -60,7 +60,8 @@ Shebang shell options are not supported.
 
 ## Command running
 
-- Each command is run in a shell: `/bin/sh` on Unix, `process.env.ComSpec` on Windows.
-- Each command is run in parallel, limited to the number of CPU cores + 1 (See the `--concurrency` option).
-- Each command's output is prefixed with the command index from the command file (eg. `"0: output line"`).
+- Commands are run in a shell: `/bin/sh` on Unix, `process.env.ComSpec` on Windows.
+- Commands use the command file's directory as the working directory.
+- Commands are run in parallel, limited to the number of CPU cores + 1 (See the `--concurrency` option).
+- Command output is prefixed with the command index from the command file (eg. `"0: output line"`).
 - If a command fails, the `parallel-rc` exit code will be non-zero, and no new commands will be started (See the `--all` option).
