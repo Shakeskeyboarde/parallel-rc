@@ -3,7 +3,7 @@
   "description": "Simply run multiple shell commands in parallel.",
   "author": "Chris Ackerman <chris@topher.land>",
   "license": "ISC",
-  "version": "1.0.4",
+  "version": "1.0.5",
   "files": [
     "lib/**"
   ],

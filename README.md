@@ -29,20 +29,34 @@ You can also use the longer `parallel-rc` command, which is an alias for `rc`.
 
 ## Options
 
-- `-c, --concurrency <num>`
-  - Override the number commands that are run in parallel.
 - `-a, --all`
-  - Continue running new commands even if a commands fails.
+  - Run all commands, even if one fails.
+- `-c, --concurrency <num>`
+  - Limit maximum number of parallel commands.
+- `-o, --order`
+  - Keep command output together and in order.
+- `-s, --shell`
+  - Set the shell used to run each command.
 - `--color, --no-color`
-  - Explicitly enable or disable color output.
+  - Force color output to be enabled or disabled.
 
 Without an explicit color option, colors are enabled automatically if support is detected (See [supports-colors](https://www.npmjs.com/package/supports-color)).
 
 ## Command file format
 
+- A simple shebang-like comment overrides the default shell.
 - Blank lines are ignored.
 - Lines that start with `#` are comments (which are ignored).
 - All other lines will be executed as shell commands.
+
+Examples of simple shebang-like comments:
+
+```
+#!/usr/bin/env <shell>
+#!<shell>
+```
+
+Shebang shell options are not supported.
 
 ## Command running
 

@@ -92,24 +92,22 @@ const limit = (concurrency: number, options: LimitOptions = {}): Limiter => {
   const active = new Set<Promise<unknown>>();
 
   let isPaused = paused;
-
-  const start = (task: () => Promise<unknown>): void => {
-    let lastActive: Promise<unknown> | undefined;
-    if (sequential) for (lastActive of active);
-    const promise = Promise.allSettled(lastActive ? [lastActive, task()] : [task()]);
-
-    active.add(promise);
-    promise.finally(() => {
-      active.delete(promise);
-      next();
-    });
-  };
+  let promise: Promise<any> | undefined;
 
   const next = (): void => {
     while (active.size < safeConcurrency && !isPaused) {
       const action = pending.shift();
-      if (!action) break;
-      start(action.task);
+
+      if (!action) {
+        break;
+      }
+
+      const actionPromise = action.task().finally(() => {
+        active.delete(actionPromise);
+        next();
+      });
+
+      active.add(actionPromise);
     }
   };
 
@@ -176,7 +174,7 @@ const limit = (concurrency: number, options: LimitOptions = {}): Limiter => {
       update();
     },
     run: async (task, ...args) => {
-      return new Promise((resolve, reject) => {
+      const runPromise = new Promise<any>((resolve, reject) => {
         pending.push({
           reject,
           task: async () =>
@@ -186,6 +184,10 @@ const limit = (concurrency: number, options: LimitOptions = {}): Limiter => {
         });
         next();
       });
+
+      promise = sequential && promise ? promise.catch(() => undefined).then(() => runPromise) : runPromise;
+
+      return promise;
     },
     get size() {
       return pending.length + active.size;

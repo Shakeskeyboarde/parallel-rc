@@ -1,6 +1,0 @@
-git branch
-git branch
-exit 1
-node -e "console.error('test');"
-node -e "setTimeout(() => {},30000)"
-node -e "setTimeout(() => {},30000)"

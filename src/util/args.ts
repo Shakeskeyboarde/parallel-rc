@@ -7,7 +7,6 @@ type ArgsOptions<TOptions extends Record<string, ArgsType>> = {
 type ArgsAliases<TOptionNames, TAliases extends Record<string, TOptionNames>> = {
   readonly [P in keyof TAliases]: P extends `${'-'}${string}` | `${string}${'='}${string}` ? never : TAliases[P];
 };
-// type ArgName<TArg extends string> = TArg extends `${infer TName}${'='}${string}` ? TName : TArg;
 type Args<TOptions extends ArgsOptions<any>> = Simplify<
   UnionToIntersection<
     {
@@ -47,45 +46,59 @@ const parseArgs = <
       break;
     }
 
-    if (!/^(?:-.|--.{2,})$/.test(arg)) {
+    // eslint-disable-next-line unicorn/no-unsafe-regex
+    const match = arg.match(/^(?<dashes>-{1,2})(?<name>[^=]*)(?:=(?<value>.*))?$/su);
+
+    if (!match?.groups) {
       positional.push(arg);
       continue;
     }
 
-    let name: string, value: string | undefined;
-    // eslint-disable-next-line unicorn/no-unsafe-regex
-    [, name, value] = arg.match(/^-*([^=]*)(?:=(.*))?$/su) as [string, string, string | undefined];
+    const dashes = match.groups.dashes;
+    let name = match.groups.name;
+    let value = match.groups.value as string | undefined;
 
-    if (!(name in options)) {
-      if (!(name in aliases)) {
-        throw new Error(`Option ${JSON.stringify(arg)} is unknown`);
+    if (dashes === '-' && /^.{2}/u.test(name)) {
+      const chars = Array.from(name);
+
+      if (chars.length > 1) {
+        if (value != null) {
+          argvCopy.unshift(value);
+        }
+
+        argvCopy.unshift(...chars.filter((char) => char !== '-').map((char) => `-${char}`));
+        continue;
       }
+    }
 
+    if (!(name in options) && name in aliases) {
       name = (aliases as Record<string, string>)[name];
     }
 
-    if (name in options) {
-      const parse = (options as Record<string, ArgsType>)[name];
+    if (!(name in options)) {
+      throw new Error(`Option ${JSON.stringify(arg)} is unknown`);
+    }
 
-      if (parse === Boolean) {
-        if (value != null) {
-          throw new Error(`Option ${JSON.stringify(arg)} does not accept a value`);
-        }
+    const parse = (options as Record<string, ArgsType>)[name];
 
-        args[name].push(true);
-        continue;
+    if (parse === Boolean) {
+      if (value != null) {
+        throw new Error(`Option ${JSON.stringify(arg)} does not accept a value`);
       }
+
+      args[name].push(true);
+      continue;
+    }
+
+    if (value == null) {
+      value = argvCopy.shift();
 
       if (value == null) {
-        value = argvCopy.shift();
-
-        if (value == null) {
-          throw new Error(`Option ${JSON.stringify(arg)} requires a value`);
-        }
+        throw new Error(`Option ${JSON.stringify(arg)} requires a value`);
       }
-
-      args[name].push(parse(value));
     }
+
+    args[name].push(parse(value));
   }
 
   return {

@@ -1,164 +1,138 @@
 import { create as createColors } from 'ansi-colors';
-import spawn from 'cross-spawn';
 import assert from 'node:assert';
 import { type ChildProcess } from 'node:child_process';
-import nodeFs from 'node:fs';
 import module from 'node:module';
-import os from 'node:os';
 import { createSupportsColor } from 'supports-color';
 
-import { parseArgs } from './args.js';
-import { limit } from './limit.js';
-import { createLogger } from './logger.js';
+import { loadCommands } from './commands.js';
+import { execAll } from './exec.js';
+import { getOptions } from './options.js';
 import { usage } from './usage.js';
+import { LineStream } from './util/line-stream.js';
+import { mediate } from './util/mediate.js';
 
-const main = async (argv = process.argv.slice(2)): Promise<void> => {
-  const interrupted = { value: false };
-  const childProcesses = new Set<ChildProcess>();
-  const interrupt = () => {
-    process.stderr.clearLine(0);
-    process.stderr.cursorTo(0);
-    interrupted.value = true;
-    childProcesses.forEach((childProcess) => childProcess.kill('SIGINT'));
-  };
+const main = async (argv?: readonly string[]): Promise<void> => {
+  const options = getOptions(argv);
 
-  process.on('SIGINT', interrupt);
-  process.on('SIGTERM', interrupt);
-
-  const colors = createColors();
-  const args = parseArgs(
-    argv,
-    {
-      all: Boolean,
-      color: Boolean,
-      concurrency: Number,
-      help: Boolean,
-      'no-color': Boolean,
-      version: Boolean,
-    },
-    {
-      a: 'all',
-      c: 'concurrency',
-      h: 'help',
-      v: 'version',
-    },
-  );
-
-  colors.enabled =
-    !args.has('no-color') &&
-    (args.has('color') ||
-      (Boolean(createSupportsColor(process.stdout, { sniffFlags: false })) &&
-        Boolean(createSupportsColor(process.stderr, { sniffFlags: false }))));
-
-  if (args.has('help')) {
+  if (options.help) {
     usage();
     return;
   }
 
-  if (args.has('version')) {
+  if (options.version) {
     console.log(module.createRequire(import.meta.url)('../package.json').version);
     return;
   }
 
-  const all = args.has('all');
-  const concurrency = args.get('concurrency') ?? os.cpus().length + 1;
-  const filenames = args.positional;
+  assert(options.concurrency > 0, 'Concurrency must be greater than zero');
+  assert(options.filenames.length, 'One command filename is required');
 
-  assert(concurrency > 0, 'Concurrency must be greater than zero');
-  assert(filenames.length, 'One command filename is required');
+  const colors = { stderr: createColors(), stdout: createColors() };
+  const controller = new AbortController();
+  const procs = new Set<ChildProcess>();
+  const onSignal = (signal: NodeJS.Signals) => {
+    console.error();
+    controller.abort();
+    procs.forEach((proc) => proc.kill(signal));
+  };
 
-  const limiter = limit(concurrency);
-  const config = await Promise.all(
-    filenames.map((filename) =>
-      limiter.run(async () =>
-        interrupted.value
-          ? ''
-          : nodeFs.promises
-              .readFile(filename + '.rc', 'utf8')
-              .catch(() => nodeFs.promises.readFile(filename, 'utf8'))
-              .catch(() => {
-                throw new Error(`File not found (${JSON.stringify(filename + '.rc')}, ${JSON.stringify(filename)})`);
-              }),
-      ),
-    ),
-  ).then((values) => values.join('\n'));
+  process.on('SIGINT', onSignal);
+  process.on('SIGTERM', onSignal);
 
-  if (interrupted.value) {
+  colors.stdout.enabled = options.color ?? Boolean(createSupportsColor(process.stdout, { sniffFlags: false }));
+  colors.stderr.enabled = options.color ?? Boolean(createSupportsColor(process.stderr, { sniffFlags: false }));
+
+  const commands = await loadCommands(options.filenames);
+
+  if (controller.signal.aborted) {
     return;
   }
 
   const errors: [index: number, reason: string][] = [];
-  const commands = config
-    .split(/\r?\n/)
-    .map((line) => line.trim())
-    .filter((line) => line && !line.startsWith('#'));
-  const promises = commands
-    .map((command, i) => () => {
-      return new Promise<void>((resolve) => {
-        if (interrupted.value || (errors.length && !all)) {
-          resolve();
+  const activators: (() => void)[] = [];
+
+  process.on('exit', () => {
+    if (errors.length) {
+      if (process.exitCode == null || process.exitCode !== 0) {
+        process.exitCode = 1;
+      }
+
+      errors
+        .sort(([a], [b]) => a - b)
+        .forEach(([index, reason]) => {
+          console.error(colors.stderr.red(`Failed command ${index}${reason ? ` (${reason})` : ''}`));
+        });
+    } else {
+      console.error(colors.stderr.green(`Successfully completed ${commands.length} commands`));
+      return;
+    }
+  });
+
+  await execAll(
+    commands,
+    ({ proc, index, command, promise }) => {
+      const [act, actMediator] = mediate((action: () => void) => action());
+      const console: Pick<Console, 'error' | 'log'> = {
+        error: (...args) => void act(() => global.console.error(...args)),
+        log: (...args) => void act(() => global.console.log(...args)),
+      };
+
+      void promise.then(() => {
+        actMediator.flush();
+      });
+
+      if (options.order) {
+        if (activators.length > 0) {
+          actMediator.pause();
+        }
+
+        activators.push(actMediator.resume);
+
+        void promise.then(() => {
+          activators.shift();
+          void activators.at(0)?.();
+        });
+      }
+
+      procs.add(proc);
+      console.error(colors.stderr.dim(`${index}: `) + colors.stderr.bold.blue('$ ' + command.script));
+
+      proc.stdout?.on('data', (line) => console.log(colors.stdout.dim(`${index}: `) + line));
+      proc.stderr?.on('data', (line) => console.log(colors.stdout.dim(`${index}: `) + colors.stdout.yellow(line)));
+
+      let error: Error | undefined;
+
+      proc.on('error', (err) => {
+        error = err;
+        new LineStream()
+          .on('data', (line) => console.error(colors.stderr.dim(`${index}! `) + colors.stderr.red(line)))
+          .end(`${error.stack ?? error}`);
+      });
+      proc.on('close', (code, signal) => {
+        procs.delete(proc);
+
+        if (error) {
+          errors.push([index, error.name]);
+        } else if (code) {
+          errors.push([index, `Code: ${code}`]);
+        } else if (signal) {
+          errors.push([index, signal]);
+        } else {
           return;
         }
 
-        const intro = createLogger({ prefix: colors.dim(`${i}> `), wrap: colors.bold, write: process.stderr });
-        const output = createLogger({ prefix: colors.dim(`${i}: `), write: process.stdout });
-        const error = createLogger({ prefix: colors.dim(`${i}! `), wrap: colors.red, write: process.stderr });
-        const finish = () => {
-          intro.flush();
-          output.flush();
-          error.flush();
-          resolve();
-        };
-
-        intro.log(command);
-
-        const childProcess = spawn(command, { env: { ...process.env, TERM: 'dumb' }, shell: true, stdio: 'pipe' });
-
-        childProcesses.add(childProcess);
-        childProcess.stdin?.end();
-        childProcess.stdout?.setEncoding('utf8').on('data', output.write);
-        childProcess.stderr?.setEncoding('utf8').on('data', output.write);
-        childProcess.on('error', (err) => {
-          childProcesses.delete(childProcess);
-
-          if (process.exitCode == null) {
-            process.exitCode = 1;
-          }
-
-          error.log(`${err}`);
-          errors.push([i, err.name]);
-          finish();
-        });
-        childProcess.on('exit', (code, signal) => {
-          childProcesses.delete(childProcess);
-
-          if (code !== 0 && process.exitCode == null) {
-            process.exitCode = 1;
-          }
-
-          if (code != null) {
-            if (code !== 0) {
-              errors.push([i, `Code: ${code}`]);
-            }
-          } else if (signal != null) {
-            errors.push([i, signal]);
-          } else {
-            errors.push([i, '']);
-          }
-
-          finish();
-        });
+        if (!options.all) {
+          controller.abort();
+        }
       });
-    })
-    .map(limiter.run);
-
-  await Promise.allSettled(promises);
-
-  errors
-    .sort(([a], [b]) => a - b)
-    .forEach(([index, reason]) => {
-      console.error(colors.red(`Failed command ${index}${reason ? ` (${reason})` : ''}`));
-    });
+    },
+    {
+      abortSignal: controller.signal,
+      concurrency: options.concurrency,
+      order: options.order,
+      shell: options.shell,
+    },
+  );
 };
 
 export { main };
