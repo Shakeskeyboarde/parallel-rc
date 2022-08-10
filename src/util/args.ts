@@ -46,7 +46,6 @@ const parseArgs = <
       break;
     }
 
-    // eslint-disable-next-line unicorn/no-unsafe-regex
     const match = arg.match(/^(?<dashes>-{1,2})(?<name>[^=]*)(?:=(?<value>.*))?$/su);
 
     if (!match?.groups) {

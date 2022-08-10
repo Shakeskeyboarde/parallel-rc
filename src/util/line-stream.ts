@@ -8,8 +8,7 @@ type LineStreamOptions = {
 };
 
 class LineStream extends Transform {
-  // eslint-disable-next-line functional/prefer-readonly-type
-  private _buffer = '';
+  private _mutableBuffer = '';
   private readonly _decoder = new StringDecoder('utf8');
   private readonly _transformLine: (line: string) => string;
 
@@ -21,17 +20,17 @@ class LineStream extends Transform {
   _transform(chunk: any, _encoding: BufferEncoding, callback: TransformCallback): void {
     const lines = this._decoder.write(Buffer.isBuffer(chunk) ? chunk : Buffer.from(String(chunk))).split(/\r?\n/);
 
-    lines[0] = this._buffer + lines[0];
-    this._buffer = lines.pop() ?? '';
+    lines[0] = this._mutableBuffer + lines[0];
+    this._mutableBuffer = lines.pop() ?? '';
     lines.forEach((line) => this.push(this._transformLine(line), 'utf8'));
     callback();
   }
 
   _flush(callback: TransformCallback): void {
-    this._buffer += this._decoder.end();
+    this._mutableBuffer += this._decoder.end();
 
-    if (this._buffer) {
-      this.push(this._transformLine(this._buffer), 'utf8');
+    if (this._mutableBuffer) {
+      this.push(this._transformLine(this._mutableBuffer), 'utf8');
     }
 
     callback();
