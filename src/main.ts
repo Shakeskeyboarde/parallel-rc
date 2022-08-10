@@ -105,7 +105,7 @@ const main = async (argv?: readonly string[]): Promise<void> => {
       proc.on('error', (err) => {
         error = err;
         new LineStream()
-          .on('data', (line) => console.error(colors.stderr.dim(`${index}! `) + colors.stderr.red(line)))
+          .on('data', (line) => console.error(colors.stderr.dim(`${index}: `) + colors.stderr.red(line)))
           .end(`${error.stack ?? error}`);
       });
       proc.on('close', (code, signal) => {

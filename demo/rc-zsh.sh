@@ -1,4 +1,4 @@
-##!/usr/bin/env zsh
+#!/usr/bin/env zsh
 echo $0
 echo $PWD
 git branch
