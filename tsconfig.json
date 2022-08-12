@@ -16,6 +16,7 @@
     "noEmit": true,
     "rootDir": "src",
     "outDir": "lib",
+    "noUncheckedIndexedAccess": true,
     "sourceMap": true,
     "declaration": true
   },
