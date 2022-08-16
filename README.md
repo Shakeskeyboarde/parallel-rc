@@ -37,8 +37,10 @@ You can also use the longer `parallel-rc` command, which is an alias for `rc`.
   - Keep command output together and in order.
 - `-s, --shell`
   - Set the shell used to run each command.
-- `--color, --no-color`
-  - Force color output to be enabled or disabled.
+- `--color`
+  - Enable color output.
+- `--no-color`
+  - Disable color output (overrides `--color`).
 
 Without an explicit color option, colors are enabled automatically if support is detected (See [supports-colors](https://www.npmjs.com/package/supports-color)).
 

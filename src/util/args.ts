@@ -1,35 +1,35 @@
 type ArgParser<TValue> = (arg: string) => TValue;
-type Args<TParsers extends Record<string, ArgParser<any>>> = {
-  readonly get: <TKey extends keyof TParsers>(arg: TKey) => ReturnType<TParsers[TKey]> | undefined;
-  readonly getAll: <TKey extends keyof TParsers>(arg: TKey) => readonly ReturnType<TParsers[TKey]>[];
-  readonly getRequired: <TKey extends keyof TParsers>(arg: TKey) => ReturnType<TParsers[TKey]>;
-  readonly has: (arg: keyof TParsers) => boolean;
+type ArgOption = ArgParser<any> | readonly [...alias: readonly string[], parse: ArgParser<any> | true] | true;
+type ArgsOptions = {
+  readonly [key: string]: ArgOption;
+};
+type ArgParserType<TParser> = TParser extends ArgParser<infer TValue> ? TValue : true;
+type ArgType<TOption> = TOption extends readonly [...alias: readonly string[], parse: infer TParser]
+  ? ArgParserType<TParser>
+  : ArgParserType<TOption>;
+type Args<TOptions extends ArgsOptions> = {
+  readonly get: <TKey extends keyof TOptions>(arg: TKey) => ArgType<TOptions[TKey]> | undefined;
+  readonly getAll: <TKey extends keyof TOptions>(arg: TKey) => readonly ArgType<TOptions[TKey]>[];
+  readonly getRequired: <TKey extends keyof TOptions>(arg: TKey) => ArgType<TOptions[TKey]>;
+  readonly has: (arg: keyof TOptions) => boolean;
   readonly positional: readonly string[];
 };
 
-const parseArgs = <
-  TParsers extends Record<keyof TParsers, ArgParser<any> | BooleanConstructor>,
-  TAliases extends Record<keyof TAliases, keyof TParsers>,
->(
-  argv: readonly string[],
-  parsers: TParsers,
-  aliases: TAliases = {} as TAliases,
-): Args<TParsers> => {
-  argv = [...argv];
-
-  const options: { [P in keyof TParsers]?: { name: P; parse: TParsers[P] } } = Object.create(null);
-  const aliasOptions: { [P in keyof TAliases]?: { name: TAliases[P]; parse: TParsers[TAliases[P]] } } =
-    Object.create(null);
-  const values: {
-    [P in keyof TParsers]?: readonly ReturnType<TParsers[P]>[];
-  } = Object.create(null);
+const parseArgs = <TOptions extends ArgsOptions>(argv: readonly string[], options: TOptions): Args<TOptions> => {
+  const values: { [P in keyof TOptions]?: readonly ArgType<TOptions[P]>[] } = Object.create(null);
   const positional: string[] = [];
+  const aliases: Partial<Record<string, keyof TOptions>> = Object.create(null);
 
-  (Object.getOwnPropertyNames(parsers) as (keyof TParsers)[]).forEach((key) => {
-    options[key] = { name: key, parse: parsers[key] };
-  });
-  (Object.getOwnPropertyNames(aliases) as (keyof TAliases)[]).forEach((key) => {
-    aliasOptions[key] = { name: aliases[key], parse: parsers[aliases[key]] };
+  (Object.getOwnPropertyNames(options) as (keyof TOptions)[]).forEach((name) => {
+    const option = options[name];
+
+    if (option instanceof Array) {
+      option
+        .filter((value): value is string => typeof value === 'string')
+        .forEach((alias) => {
+          aliases[alias] = name;
+        });
+    }
   });
 
   const nextArg = (): string | undefined => {
@@ -38,84 +38,98 @@ const parseArgs = <
     return value;
   };
 
-  const addValue = <TKey extends keyof TParsers>(name: TKey, value: ReturnType<TParsers[TKey]>): void => {
+  const getOption = (argName: string): { name: keyof TOptions; parse: ArgParser<any> | true } | null => {
+    const name = Object.hasOwn(options, argName) ? (argName as keyof TOptions) : aliases[argName];
+    const option: ArgOption | undefined = name != null ? options[name] : undefined;
+    const parse =
+      option instanceof Array ? option.find((entry): entry is ArgParser<any> => typeof entry !== 'string') : option;
+
+    return name != null && parse != null ? { name, parse } : null;
+  };
+
+  const getValue = (value: string, parse: ArgParser<any>): any => {
+    try {
+      return parse === Boolean
+        ? value.toLowerCase() === 'true'
+          ? true
+          : value.toLowerCase() === 'false'
+          ? false
+          : null
+        : parse(value);
+    } catch (error: any) {
+      throw new Error(`Option ${JSON.stringify(arg)} value is invalid.\n${error?.message || error}`);
+    }
+  };
+
+  const addValue = <TKey extends keyof TOptions>(name: TKey, value: ArgType<TOptions[TKey]>): void => {
     values[name] = [...(values[name] ?? []), value];
   };
 
   let arg: string | undefined;
 
   while ((arg = nextArg()) != null) {
-    if (arg === '--') {
-      positional.push(...argv);
-      break;
-    }
+    const match = arg.match(/^(?<dashes>-{1,2})(?<argName>[^=]+)(?:=(?<argValue>.*))?$/su);
 
-    const match = arg.match(/^(?<dashes>-{1,2})(?<name>[^=]*)(?:=(?<maybeValue>.*))?$/su);
-
-    if (!match?.groups || match.groups.dashes == null || match.groups.name == null) {
+    if (!match?.groups || match.groups.dashes == null || match.groups.argName == null) {
       positional.push(arg);
       continue;
     }
 
-    const { dashes, name, maybeValue } = match.groups;
+    const { dashes, argName, argValue } = match.groups;
 
     if (dashes === '-') {
-      const chars = Array.from(name);
+      const chars = Array.from(argName);
 
       if (chars.length > 1) {
-        if (maybeValue != null) {
-          argv = [maybeValue, ...argv];
-        }
-
-        argv = [...chars.filter((char) => char !== '-').map((char) => `-${char}`), ...argv];
+        argv = [
+          ...chars.filter((char) => char !== '-').map((char) => `-${char}`),
+          ...(argValue != null ? [argValue] : []),
+          ...argv,
+        ];
         continue;
       }
     }
 
-    const option = options[name as keyof TParsers] ?? aliasOptions[name as keyof TAliases];
+    const option = getOption(argName);
 
     if (!option) {
       throw new Error(`Option ${JSON.stringify(arg)} is unknown`);
     }
 
-    if (option.parse === Boolean) {
-      if (maybeValue != null) {
+    const { name, parse } = option;
+
+    if (typeof parse !== 'function') {
+      if (argValue != null) {
         throw new Error(`Option ${JSON.stringify(arg)} does not accept a value`);
       }
 
-      addValue(option.name, true as ReturnType<typeof option.parse>);
+      addValue(name, true as any);
       continue;
     }
 
-    const value = maybeValue ?? nextArg();
+    const maybeValue = argValue ?? nextArg();
 
-    if (value == null) {
+    if (maybeValue == null) {
       throw new Error(`Option ${JSON.stringify(arg)} requires a value`);
     }
 
-    const parsedValue = (() => {
-      try {
-        return option.parse(value);
-      } catch (error: any) {
-        throw new Error(`Option ${JSON.stringify(arg)} value is invalid.\n${error?.message || error}`);
-      }
-    })();
+    const value = getValue(maybeValue, parse);
 
-    if (parsedValue == null) {
+    if (value == null) {
       throw new Error(`Option ${JSON.stringify(arg)} value is invalid`);
     }
 
-    addValue(option.name, parsedValue);
+    addValue(name, value);
   }
 
   const args = {
-    get: <TKey extends keyof TParsers>(key: TKey): ReturnType<TParsers[TKey]> | undefined => {
+    get: <TKey extends keyof TOptions>(key: TKey): ArgType<TOptions[TKey]> | undefined => {
       return values[key]?.at(-1);
     },
-    getAll: <TKey extends keyof TParsers>(key: TKey): ReturnType<TParsers[TKey]>[] => {
+    getAll: <TKey extends keyof TOptions>(key: TKey): ArgType<TOptions[TKey]>[] => {
       return [...(values[key] ?? [])];
     },
-    getRequired: <TKey extends keyof TParsers>(key: TKey): ReturnType<TParsers[TKey]> => {
+    getRequired: <TKey extends keyof TOptions>(key: TKey): ArgType<TOptions[TKey]> => {
       const value = args.get(key);
 
       if (value == null) {
@@ -124,7 +138,7 @@ const parseArgs = <
 
       return value;
     },
-    has: (key: keyof TParsers): boolean => {
+    has: (key: keyof TOptions): boolean => {
       return Boolean(values[key]?.length);
     },
     positional,

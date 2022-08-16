@@ -14,31 +14,20 @@ type Options = {
 };
 
 const getOptions = (argv: readonly string[] = process.argv.slice(2)): Options => {
-  const args = parseArgs(
-    argv,
-    {
-      all: Boolean,
-      color: Boolean,
-      concurrency: Number,
-      help: Boolean,
-      'no-color': Boolean,
-      order: Boolean,
-      shell: String,
-      version: Boolean,
-    },
-    {
-      a: 'all',
-      c: 'concurrency',
-      h: 'help',
-      o: 'order',
-      s: 'shell',
-      v: 'version',
-    },
-  );
+  const args = parseArgs(argv, {
+    all: ['a', true],
+    color: true,
+    concurrency: ['c', Number],
+    help: ['h', true],
+    'no-color': true,
+    order: ['o', true],
+    shell: ['s', String],
+    version: ['v', true],
+  });
 
   return {
     all: args.has('all'),
-    color: args.has('no-color') ? false : args.has('color') ? true : undefined,
+    color: args.get('no-color') == null && args.get('color'),
     concurrency: args.get('concurrency') ?? nodeOs.cpus().length + 1,
     filenames: args.positional,
     help: args.has('help'),

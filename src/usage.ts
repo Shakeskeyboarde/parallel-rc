@@ -22,7 +22,8 @@ Options:
   -c, --concurrency <num>  Limit maximum number of parallel commands.
   -o, --order              Keep processes output together and in order.
   -s, --shell              Set the shell used to run each command.
-  --color, --no-color      Force color output to be enabled or disabled.
+  --color                  Enable color output.
+  --no-color               Disable color output (overrides --color).
     `.trim() + '\n',
   );
 };
