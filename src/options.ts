@@ -1,5 +1,5 @@
-import { parseArgs } from 'cliopts';
 import nodeOs from 'node:os';
+import nodeUtil from 'node:util';
 
 type Options = {
   readonly all: boolean;
@@ -13,26 +13,30 @@ type Options = {
 };
 
 const getOptions = (args: readonly string[] = process.argv.slice(2)): Options => {
-  const options = parseArgs(args, {
-    all: { alias: 'a', type: true },
-    color: { type: true },
-    concurrency: { alias: 'c', type: Number },
-    help: { alias: 'h', type: true },
-    'no-color': { type: false },
-    order: { alias: 'o', type: true },
-    shell: { alias: 's', type: String },
-    version: { alias: 'v', type: true },
+  const options = nodeUtil.parseArgs({
+    allowPositionals: true,
+    args: [...args],
+    options: {
+      all: { short: 'a', type: 'boolean' },
+      color: { type: 'boolean' },
+      concurrency: { short: 'c', type: 'string' },
+      help: { short: 'h', type: 'boolean' },
+      'no-color': { type: 'boolean' },
+      order: { short: 'o', type: 'boolean' },
+      shell: { short: 's', type: 'string' },
+      version: { short: 'v', type: 'boolean' },
+    },
   });
 
   return {
-    all: options.has('all'),
-    color: options.get('no-color') ?? options.get('color'),
-    concurrency: options.get('concurrency') ?? nodeOs.cpus().length + 1,
-    filenames: options.positional,
-    help: options.has('help'),
-    order: options.has('order'),
-    shell: options.get('shell'),
-    version: options.has('version'),
+    all: Boolean(options.values.all),
+    color: options.values['no-color'] ?? Boolean(options.values.color),
+    concurrency: Math.max(1, Number(options.values.concurrency)) || nodeOs.cpus().length + 1,
+    filenames: options.positionals,
+    help: Boolean(options.values.help),
+    order: Boolean(options.values.order),
+    shell: options.values.shell,
+    version: Boolean(options.values.version),
   };
 };
 
